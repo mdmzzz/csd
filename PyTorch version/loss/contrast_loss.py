@@ -11,8 +11,8 @@ import math
 class Vgg19(torch.nn.Module):
     def __init__(self, requires_grad=False):
         super(Vgg19, self).__init__()
-        vgg_pretrained_features = models.vgg19(pretrained=True).features
-        self.slice1 = torch.nn.Sequential()
+        vgg_pretrained_features = models.vgg19(pretrained=True).features   #加载特征提取部分 赋值给模块
+        self.slice1 = torch.nn.Sequential()   #定义一个空的模块
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()
         self.slice4 = torch.nn.Sequential()
@@ -29,7 +29,7 @@ class Vgg19(torch.nn.Module):
             self.slice5.add_module(str(x), vgg_pretrained_features[x])
         if not requires_grad:
             for param in self.parameters():
-                param.requires_grad = False
+                param.requires_grad = False   #冻结参数不进行更新
 
     def forward(self, X):
         h_relu1 = self.slice1(X)
@@ -37,7 +37,7 @@ class Vgg19(torch.nn.Module):
         h_relu3 = self.slice3(h_relu2)
         h_relu4 = self.slice4(h_relu3)
         h_relu5 = self.slice5(h_relu4)
-        out = [h_relu1, h_relu2, h_relu3, h_relu4, h_relu5]
+        out = [h_relu1, h_relu2, h_relu3, h_relu4, h_relu5]   #输出的是每一个阶段的值
         return out
 
 
@@ -51,11 +51,11 @@ class ContrastLoss(nn.Module):
         self.is_one = is_one
         self.t_detach = t_detach
 
-    def forward(self, teacher, student, neg, blur_neg=None):
-        teacher_vgg, student_vgg, neg_vgg, = self.vgg(teacher), self.vgg(student), self.vgg(neg)
+    def forward(self, teacher, student, neg, blur_neg=None):   #neg是数量
+        teacher_vgg, student_vgg, neg_vgg, = self.vgg(teacher), self.vgg(student), self.vgg(neg)   #获得的是每一个阶段的值
         blur_neg_vgg = None
         if blur_neg is not None:
-            blur_neg_vgg = self.vgg(blur_neg)
+            blur_neg_vgg = self.vgg(blur_neg)   #代码中尚未被用上
         if self.d_func == "L1":
             self.forward_func = self.L1_forward
         elif self.d_func == 'cos':
@@ -71,11 +71,11 @@ class ContrastLoss(nn.Module):
         :return:
         """
         loss = 0
-        for i in range(len(teacher)):
-            neg_i = neg[i].unsqueeze(0)
-            neg_i = neg_i.repeat(student[i].shape[0], 1, 1, 1, 1)
-            neg_i = neg_i.permute(1, 0, 2, 3, 4)### batchsize*negnum*color*patchsize*patchsize
-            if blur_neg is not None:
+        for i in range(len(teacher)):   #每一个阶段的值
+            neg_i = neg[i].unsqueeze(0)   #升了一维 第几个阶段
+            neg_i = neg_i.repeat(student[i].shape[0], 1, 1, 1, 1)  #复制多次使其和学生样本在第一个维度上大小相同
+            neg_i = neg_i.permute(1, 0, 2, 3, 4)### batchsize*negnum*color*patchsize*patchsize     和学生的维度顺序相同  把个数移到前面
+            if blur_neg is not None:   #不存在忽略
                 blur_neg_i = blur_neg[i].unsqueeze(0)
                 neg_i = torch.cat((neg_i, blur_neg_i))
 
@@ -84,7 +84,7 @@ class ContrastLoss(nn.Module):
                 d_ts = self.l1(teacher[i].detach(), student[i])
             else:
                 d_ts = self.l1(teacher[i], student[i])
-            d_sn = torch.mean(torch.abs(neg_i.detach() - student[i]).sum(0))
+            d_sn = torch.mean(torch.abs(neg_i.detach() - student[i]).sum(0))   ##求均值的过程
 
             contrastive = d_ts / (d_sn + 1e-7)
             loss += self.weights[i] * contrastive

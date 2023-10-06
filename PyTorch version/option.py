@@ -163,7 +163,7 @@ parser.add_argument('--teacher_model', type=str, default='output/model/edsr/base
 parser.add_argument('--neg_num', type=int, default=8,
                     help='negative samples number')
 
-parser.add_argument('--t_lambda', type=float, default=0, help='weight of l1(hr, teacher_sr)')
+parser.add_argument('--t_lambda', type=float, default=0, help='weight of l1(hr, teacher_sr)')  #l1损失的权重
 parser.add_argument('--contra_lambda', type=float, default=1, help='weight of contra_loss')
 parser.add_argument('--ad_lambda', type=float, default=0, help='weight of adversarial loss')
 parser.add_argument('--percep_lambda', type=float, default=0, help='weight of perceptual loss')
@@ -172,7 +172,7 @@ parser.add_argument('--vgg_weight', nargs='+', type=float, default=[1.0/32, 1.0/
                     help='weight of vgg features in contrastive loss')
 parser.add_argument('--d_func', type=str, default="L1", help='the distance function in contrastive loss')
 parser.add_argument('--mean_outside', action='store_true', help='calc mean for negative samples outside the contrast_loss')
-parser.add_argument('--t_l_remove', type=int, default=0, help='remove teacher loss @ epoch {t_l_remove}')
+parser.add_argument('--t_l_remove', type=int, default=0, help='remove teacher loss @ epoch {t_l_remove}')   #移除教师损失
 parser.add_argument('--contrast_t_detach', action='store_true', help='detach teacher in contrast_loss')
 parser.add_argument('--gt_as_pos', action='store_true', help='use gt as positive sample')
 parser.add_argument('--blur_sigma', type=float, default=0, help='blur sigma of neg sample')

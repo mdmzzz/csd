@@ -6,13 +6,13 @@ class EDSR(nn.Module):
     def __init__(self, args):
         super(EDSR, self).__init__()
 
-        self.n_colors = args.n_colors
-        n_resblocks = args.n_resblocks
-        self.n_feats = args.n_feats
-        self.kernel_size = 3
-        scale = args.scale[0]
+        self.n_colors = args.n_colors   #表示输入颜色的通道数
+        n_resblocks = args.n_resblocks  #表示残差块数量
+        self.n_feats = args.n_feats  #每个残差块的通道特征数
+        self.kernel_size = 3   #卷积核尺寸是3
+        scale = args.scale[0]   #上采样尺度因子
         act = nn.ReLU(True)
-        self.sub_mean = common.MeanShift(args.rgb_range)
+        self.sub_mean = common.MeanShift(args.rgb_range)  #图像归一化和反归一化
         self.add_mean = common.MeanShift(args.rgb_range, sign=1)
 
         self.head = nn.Conv2d(args.n_colors, self.n_feats, self.kernel_size, padding=(self.kernel_size//2), bias=True)
@@ -29,16 +29,16 @@ class EDSR(nn.Module):
         self.tail_conv = nn.Conv2d(self.n_feats, args.n_colors, self.kernel_size, padding=(self.kernel_size//2), bias=True)
 
     def forward(self, x, width_mult=1):
-        feature_width = int(self.n_feats * width_mult)
+        feature_width = int(self.n_feats * width_mult)  #int是为了保证通道数是整数值
 
-        x = self.sub_mean(x)
+        x = self.sub_mean(x)  #进行归一化
         weight = self.head.weight[:feature_width, :self.n_colors, :, :]
         bias = self.head.bias[:feature_width]
         x = nn.functional.conv2d(x, weight, bias, padding=(self.kernel_size//2))
 
         residual = x
         for block in self.body:
-            residual = block(residual, width_mult)
+            residual = block(residual, width_mult)  #每一个都用上一个进行计算
         weight = self.body_conv.weight[:feature_width, :feature_width, :, :]
         bias = self.body_conv.bias[:feature_width]
         residual = nn.functional.conv2d(residual, weight, bias, padding=(self.kernel_size//2))

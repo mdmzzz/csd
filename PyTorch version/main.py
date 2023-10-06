@@ -18,11 +18,11 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if args.seperate:
         t = SeperateContrastiveTrainer(args, loader, device)
-    else:
+    else:   #设置训练参数 路径
         t = SlimContrastiveTrainer(args, loader, device)
     #     t = SlimContrastiveTrainer(args, loader, device, neg_loader)
 
-    if args.model_stat:
+    if args.model_stat:   #统计学生模型 教师模型的参数数量
         total_param = 0
         if args.seperate:
             for name, param in t.s_model.named_parameters():

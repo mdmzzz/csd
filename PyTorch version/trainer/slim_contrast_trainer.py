@@ -7,12 +7,9 @@ from importlib import import_module
 import numpy as np
 
 # import lpips
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.transforms as transforms
+import torchvision
 from tensorboardX import SummaryWriter
-
+import torch.nn as nn
 import utils.utility as utility
 from loss.contrast_loss import ContrastLoss
 from loss.adversarial import Adversarial
@@ -24,16 +21,16 @@ from utils.ssim import calc_ssim
 
 
 class SlimContrastiveTrainer:
-    def __init__(self, args, loader, device, neg_loader=None):
-        self.model_str = args.model.lower()
-        self.pic_path = f'./output/{self.model_str}/{args.model_filename}/'
-        if not os.path.exists(self.pic_path):
+    def __init__(self, args, loader, device, neg_loader=None):  #主要是参数配置
+        self.model_str = args.model.lower()  #EDSR
+        self.pic_path = f'./output/{self.model_str}/{args.model_filename}/'   #保存输出图片
+        if not os.path.exists(self.pic_path):    #检查路径是否存在 不存在就创造一个文件夹
             self.makedirs = os.makedirs(self.pic_path)
-        self.teacher_model = args.teacher_model
-        self.checkpoint_dir = args.pre_train
-        self.model_filename = args.model_filename
-        self.model_filepath = f'{self.model_filename}.pth'
-        self.writer = SummaryWriter(f'log/{self.model_filename}')
+        self.teacher_model = args.teacher_model   #把教师模型的存储
+        self.checkpoint_dir = args.pre_train   #预训练网络模型路劲
+        self.model_filename = args.model_filename  #模型名字
+        self.model_filepath = f'{self.model_filename}.pth' #构建完整的路径名
+        self.writer = SummaryWriter(f'log/{self.model_filename}')  #记录训练过程中的log
 
         self.start_epoch = -1
         self.device = device
@@ -50,67 +47,67 @@ class SlimContrastiveTrainer:
         self.best_psnr = 0
         self.best_psnr_epoch = -1
 
-        self.loader = loader
-        self.mean = [0.404, 0.436, 0.446]
-        self.std = [0.288, 0.263, 0.275]
+        self.loader = loader  #loder赋值给loader
+        self.mean = [0.404, 0.436, 0.446]  #标准差
+        self.std = [0.288, 0.263, 0.275]  #平均值
 
         self.build_model(args)
-        self.upsampler = nn.Upsample(scale_factor=self.scale, mode='bicubic')
-        self.optimizer = utility.make_optimizer(args, self.model)
+        self.upsampler = nn.Upsample(scale_factor=self.scale, mode='bicubic')  #上采样器
+        self.optimizer = utility.make_optimizer(args, self.model)   #优化器 优化模型参数
 
         self.t_lambda = args.t_lambda
         self.contra_lambda = args.contra_lambda
-        self.ad_lambda = args.ad_lambda
+        self.ad_lambda = args.ad_lambda  #是否启用自适应损失
         self.percep_lambda = args.percep_lambda
         self.t_detach = args.contrast_t_detach
-        self.contra_loss = ContrastLoss(args.vgg_weight, args.d_func, self.t_detach)
+        self.contra_loss = ContrastLoss(args.vgg_weight, args.d_func, self.t_detach)  #detach是否进行梯度传播
         self.l1_loss = nn.L1Loss()
         self.ad_loss = Adversarial(args, 'GAN')
         self.percep_loss = PerceptualLoss()
         self.t_l_remove = args.t_l_remove
 
     def train(self):
-        self.model.train()
+        self.model.train()  #模型调整为训练模式   训练模式会计算梯度 测试不会
 
         total_iter = (self.start_epoch+1)*len(self.loader.loader_train)
         for epoch in range(self.start_epoch + 1, self.epochs):
-            if epoch >= self.t_l_remove:
+            if epoch >= self.t_l_remove:   #超过该轮次 教师的l1损失权重变为0  不在关注teacher的损失了
                 self.t_lambda = 0
 
-            starttime = datetime.datetime.now()
+            starttime = datetime.datetime.now()   #获取当前的时间
 
             lrate = utility.adjust_learning_rate(self.optimizer, epoch, self.epochs, self.init_lr)
             print("[Epoch {}]\tlr:{}\t".format(epoch, lrate))
             psnr, t_psnr = 0.0, 0.0
             step = 0
             for batch, (lr, hr, _,) in enumerate(self.loader.loader_train):
-                torch.cuda.empty_cache()
-                step += 1
-                total_iter += 1
+                torchvision.cuda.empty_cache()  #清空GPU缓存
+                step += 1    #增加总步数的值
+                total_iter += 1  #总的迭代伦数
                 lr = lr.to(self.device)
                 hr = hr.to(self.device)
 
-                self.optimizer.zero_grad()
-                teacher_sr = self.model(lr)
+                self.optimizer.zero_grad()   #将梯度置为0
+                teacher_sr = self.model(lr)   #得到教师模型的结果
                 
-                student_sr = self.model(lr, self.stu_width_mult)
+                student_sr = self.model(lr, self.stu_width_mult)  #得到学生模型的结果
                 l1_loss = self.l1_loss(hr, student_sr)
                 teacher_l1_loss = self.l1_loss(hr, teacher_sr)
 
-                bic_sample = lr[torch.randperm(self.neg_num), :, :, :]
-                bic_sample = self.upsampler(bic_sample)
+                bic_sample = lr[torchvision.randperm(self.neg_num), :, :, :]   #随机选这么多个负例的构建
+                bic_sample = self.upsampler(bic_sample)  #对于数据进行上采样
                 contras_loss = 0.0
 
-                if self.neg_num > 0:
+                if self.neg_num > 0:  #计算对比损失   neg是负样本数量
                     contras_loss = self.contra_loss(teacher_sr, student_sr, bic_sample)
 
-                loss = l1_loss + self.contra_lambda * contras_loss + self.t_lambda * teacher_l1_loss
+                loss = l1_loss + self.contra_lambda * contras_loss + self.t_lambda * teacher_l1_loss   #超过一定就不在计算教师的损失
                 if self.ad_lambda > 0:
-                    ad_loss = self.ad_loss(student_sr, hr)
+                    ad_loss = self.ad_loss(student_sr, hr)   #可能的自适应损失  需要判断是否大于0
                     loss += self.ad_lambda * ad_loss
                     self.writer.add_scalar('Train/Ad_loss', ad_loss, total_iter)
                 if self.percep_lambda > 0:
-                    percep_loss = self.percep_loss(hr, student_sr)
+                    percep_loss = self.percep_loss(hr, student_sr)   #感知损失
                     loss += self.percep_lambda * percep_loss
                     self.writer.add_scalar('Train/Percep_loss', percep_loss, total_iter)
                 
@@ -125,7 +122,7 @@ class SlimContrastiveTrainer:
                 student_sr = utility.quantize(student_sr, self.rgb_range)
                 psnr += utility.calc_psnr(student_sr, hr, self.scale, self.rgb_range)
                 teacher_sr = utility.quantize(teacher_sr, self.rgb_range)
-                t_psnr += utility.calc_psnr(teacher_sr, hr, self.scale, self.rgb_range)
+                t_psnr += utility.calc_psnr(teacher_sr, hr, self.scale, self.rgb_range)   #得到效果  PSNR
                 if (batch + 1) % self.print_every == 0:
                     print(
                         f"[Epoch {epoch}/{self.epochs}] [Batch {batch * self.batch_size}/{len(self.loader.loader_train.dataset)}] "
@@ -141,12 +138,12 @@ class SlimContrastiveTrainer:
 
             print(f"training PSNR @epoch {epoch}: {psnr / step}")
 
-            test_psnr = self.test(self.stu_width_mult)
+            test_psnr = self.test(self.stu_width_mult) #保存最佳的轮次和参数值
             if test_psnr > self.best_psnr:
                 print(f"saving models @epoch {epoch} with psnr: {test_psnr}")
                 self.best_psnr = test_psnr
                 self.best_psnr_epoch = epoch
-                torch.save({
+                torchvision.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
@@ -160,7 +157,7 @@ class SlimContrastiveTrainer:
 
     def test(self, width_mult=1):
         self.model.eval()
-        with torch.no_grad():
+        with torchvision.no_grad():
             psnr = 0
             niqe_score = 0
             ssim = 0
@@ -184,8 +181,8 @@ class SlimContrastiveTrainer:
                             _sr = self.model(_x, width_mult)
                             for _op in op[i]:
                                 _sr = utility.transform(_sr, _op, self.device)
-                            res = torch.cat((res, _sr), 0)
-                        sr = torch.mean(res, 0).unsqueeze(0)
+                            res = torchvision.cat((res, _sr), 0)
+                        sr = torchvision.mean(res, 0).unsqueeze(0)
                     else:
                         sr = self.model(lr, width_mult)
 
@@ -213,9 +210,9 @@ class SlimContrastiveTrainer:
                 return psnr
 
     def build_model(self, args):
-        m = import_module('model.' + self.model_str)
-        self.model = getattr(m, self.model_str.upper())(args).to(self.device)
-        self.model = nn.DataParallel(self.model, device_ids=range(args.n_GPUs))
+        m = import_module('model.' + self.model_str)  #edsr modual.edsr
+        self.model = getattr(m, self.model_str.upper())(args).to(self.device)  #获取类对象
+        self.model = nn.DataParallel(self.model, device_ids=range(args.n_GPUs))  #放到多个GPU里面训练
         self.load_model()
 
         # test teacher
@@ -243,7 +240,7 @@ class SlimContrastiveTrainer:
                 print(f"[!] No teacher model ")
                 return
 
-        model_state_dict = torch.load(model[0])
+        model_state_dict = torchvision.load(model[0])
         if not no_student:
             self.start_epoch = model_state_dict['epoch']
             self.best_psnr = model_state_dict['best_psnr']

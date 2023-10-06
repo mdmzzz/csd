@@ -17,7 +17,7 @@ class MeanShift(nn.Conv2d):
         for p in self.parameters():
             p.requires_grad = False
 
-class ResidualBlock(nn.Module):
+class ResidualBlock(nn.Module):    #残差结构
     def __init__(self, n_feats, kernel_size, act, res_scale):
         super(ResidualBlock, self).__init__()
         self.n_feats = n_feats
@@ -25,7 +25,7 @@ class ResidualBlock(nn.Module):
         self.kernel_size = kernel_size
 
         self.conv1 = nn.Conv2d(n_feats, n_feats, kernel_size=kernel_size, padding=1)
-        self.act = act
+        self.act = act    #激活函数
         self.conv2 = nn.Conv2d(n_feats, n_feats, kernel_size=kernel_size, padding=1)
 
     def forward(self, x, width_mult=1):
@@ -33,27 +33,27 @@ class ResidualBlock(nn.Module):
         weight = self.conv1.weight[:width, :width, :, :]
         bias = self.conv1.bias[:width]
         residual = nn.functional.conv2d(x, weight, bias, padding=(self.kernel_size//2))
-        residual = self.act(residual)
+        residual = self.act(residual)   #激活函数
         weight = self.conv2.weight[:width, :width, :, :]
         bias = self.conv2.bias[:width]
         residual = nn.functional.conv2d(residual, weight, bias, padding=(self.kernel_size//2))
 
-        return x + residual.mul(self.res_scale)
+        return x + residual.mul(self.res_scale)    #残差网络的搭建
 
 class Upsampler(nn.Sequential):
     def __init__(self, scale_factor, nf):
         super(Upsampler, self).__init__()
         block = []
-        self.nf = nf
-        self.scale = scale_factor
+        self.nf = nf   #通道数（特征数）
+        self.scale = scale_factor #上采样的尺度因子 用于指定放大的倍数
 
         if scale_factor == 3:
             block += [
                 nn.Conv2d(nf, nf * 9, 3, padding=1, bias=True)
             ]
-            self.pixel_shuffle = nn.PixelShuffle(3)
+            self.pixel_shuffle = nn.PixelShuffle(3)   #执行像素洗牌操作，实现3倍上采样  增加图像的分辨率
         else:
-            self.block_num = scale_factor // 2
+            self.block_num = scale_factor // 2   #先计算出卷积块的数量
             self.pixel_shuffle = nn.PixelShuffle(2)
             #self.act = nn.ReLU()
 
@@ -73,7 +73,7 @@ class Upsampler(nn.Sequential):
                 weight = block.weight[:width9, :width, :, :]
                 bias = block.bias[:width9]
                 res = nn.functional.conv2d(res, weight, bias, padding=1)
-                res = self.pixel_shuffle(res)
+                res = self.pixel_shuffle(res)   #先卷积 后上采样 即可
         else:
             for block in self.blocks:
                 width = int(width_mult * nf)
